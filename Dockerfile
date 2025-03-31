@@ -41,8 +41,7 @@ RUN apt-get update \
     && /dotnet-install.sh --channel 6.0 \
     && /dotnet-install.sh --channel 7.0 \
     && /dotnet-install.sh --channel 8.0 \
-    && dotnet tool install -g trx2junit \
-    && PATH="$PATH:/root/.dotnet:/root/.dotnet/tools" \
+    && /root/.dotnet/dotnet tool install -g trx2junit \
     # GitHub Cli
     && curl -L https://github.com/cli/cli/releases/download/v${GITHUB_CLI_VERSION}/gh_${GITHUB_CLI_VERSION}_linux_amd64.deb -o /tmp/gh_${GITHUB_CLI_VERSION}_linux_amd64.deb \
     && dpkg -i /tmp/gh_${GITHUB_CLI_VERSION}_linux_amd64.deb \
@@ -59,14 +58,10 @@ RUN apt-get update \
 
 COPY global.json /global.json
 
-ENV PATH "$PATH:/root/.dotnet"
+ENV PATH "$PATH:/root/.dotnet:/root/.dotnet/tools"
+ENV DOTNET_ROOT "/root/.dotnet"
 
 FROM common as wasm
 # Emscripten
-RUN mkdir /ems \
-    && cd /ems \
-    && git clone https://github.com/emscripten-core/emsdk.git \
-    && cd /ems/emsdk \
-    && ./emsdk install latest \
-    && ./emsdk activate latest \
-    && dotnet workload install wasm-tools \
+RUN apt-get update && apt-get install -y python3
+RUN dotnet workload install wasm-tools
