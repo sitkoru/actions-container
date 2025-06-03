@@ -15,8 +15,8 @@ jobs:
         run: |
           DOCKER_IMAGE=ghcr.io/sitkoru/actions-container
           DOCKER_IMAGE_WASM=ghcr.io/sitkoru/actions-container-wasm
-          DOCKER_IMAGE_YANDEX=cr.yandex/crp7mlmqdq7ehq1gafh4/0xdev/actions-container
-          DOCKER_IMAGE_WASM_YANDEX=cr.yandex/crp7mlmqdq7ehq1gafh4/0xdev/actions-container-wasm
+          DOCKER_IMAGE_YANDEX=${{ secrets.YANDEX_DOCKER_REGISTRY_URL }}/0xdev/actions-container
+          DOCKER_IMAGE_WASM_YANDEX=${{ secrets.YANDEX_DOCKER_REGISTRY_URL }}/0xdev/actions-container-wasm
           VERSION=${GITHUB_REF#refs/tags/}
           TAGS="${DOCKER_IMAGE}:${VERSION}"
           TAGS_WASM="${DOCKER_IMAGE_WASM}:${VERSION}"
