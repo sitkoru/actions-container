@@ -37,6 +37,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 RUN curl -L https://dot.net/v1/dotnet-install.sh -o /dotnet-install.sh && chmod +x /dotnet-install.sh
 RUN /dotnet-install.sh --channel 8.0
+RUN /dotnet-install.sh --channel 10.0
 RUN /root/.dotnet/dotnet tool install -g trx2junit
 
 COPY global.json /global.json
