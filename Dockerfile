@@ -1,4 +1,4 @@
-FROM ubuntu:24.04 AS common
+FROM ubuntu:26.04 AS common
 
 ARG DEBIAN_FRONTEND=noninteractive
 
