@@ -32,6 +32,7 @@ jobs:
       - name: Calculate version
         id: version
         run: |
+          test -f version.json
           VERSION=$(docker run --rm -v "$PWD:/repo:ro" -w /repo actions-container:check nbgv get-version -v SimpleVersion)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
   wasm:
