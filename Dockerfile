@@ -47,4 +47,12 @@ COPY global.json /global.json
 
 FROM common AS wasm
 RUN apt-get update && apt-get install -y --no-install-recommends python3 && rm -rf /var/lib/apt/lists/*
-RUN dotnet workload install wasm-tools
+RUN mkdir /tmp/wasm-sdk \
+    && cd /tmp/wasm-sdk \
+    && for sdk in "${DOTNET_8_SDK_VERSION}" "${DOTNET_SDK_VERSION}"; do \
+        printf '{"sdk":{"version":"%s","rollForward":"disable"}}\n' "$sdk" > global.json; \
+        dotnet workload install wasm-tools --skip-manifest-update || exit 1; \
+    done \
+    && cd / \
+    && rm -rf /tmp/wasm-sdk \
+    && dotnet nuget locals all --clear

@@ -4,20 +4,34 @@ on:
   release:
     types:
       - released
+  schedule:
+    - cron: '0 3 * * 1'
+
+concurrency:
+  group: actions-container-publish
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        id: checkout
+        with:
+          ref: ${{ github.event.release.tag_name || 'master' }}
       - name: Prepare
         id: prep
+        env:
+          PRIVATE_REGISTRY: ${{ secrets.YANDEX_DOCKER_REGISTRY_URL }}
         run: |
           DOCKER_IMAGE=ghcr.io/sitkoru/actions-container
           DOCKER_IMAGE_WASM=ghcr.io/sitkoru/actions-container-wasm
-          DOCKER_IMAGE_YANDEX=${{ secrets.YANDEX_DOCKER_REGISTRY_URL }}/0xdev/actions-container
-          DOCKER_IMAGE_WASM_YANDEX=${{ secrets.YANDEX_DOCKER_REGISTRY_URL }}/0xdev/actions-container-wasm
+          DOCKER_IMAGE_YANDEX=${PRIVATE_REGISTRY}/0xdev/actions-container
+          DOCKER_IMAGE_WASM_YANDEX=${PRIVATE_REGISTRY}/0xdev/actions-container-wasm
           VERSION=${GITHUB_REF#refs/tags/}
+          if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
+            VERSION=latest
+          fi
           TAGS="${DOCKER_IMAGE}:${VERSION}"
           TAGS_WASM="${DOCKER_IMAGE_WASM}:${VERSION}"
           TAGS_YANDEX="${DOCKER_IMAGE_YANDEX}:${VERSION}"
@@ -29,22 +43,57 @@ jobs:
             TAGS_WASM="$TAGS_WASM,${DOCKER_IMAGE_WASM}:${MINOR},${DOCKER_IMAGE_WASM}:${MAJOR},${DOCKER_IMAGE_WASM}:latest"
             TAGS_YANDEX="$TAGS_YANDEX,${DOCKER_IMAGE_YANDEX}:${MINOR},${DOCKER_IMAGE_YANDEX}:${MAJOR},${DOCKER_IMAGE_YANDEX}:latest"
             TAGS_WASM_YANDEX="$TAGS_WASM_YANDEX,${DOCKER_IMAGE_WASM_YANDEX}:${MINOR},${DOCKER_IMAGE_WASM_YANDEX}:${MAJOR},${DOCKER_IMAGE_WASM_YANDEX}:latest"
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            TAGS="$TAGS,${DOCKER_IMAGE}:sha-${GITHUB_SHA::8}"
-            TAGS_WASM="$TAGS_WASM,${DOCKER_IMAGE_WASM}:sha-${GITHUB_SHA::8}"
-            TAGS_YANDEX="$TAGS_YANDEX,${DOCKER_IMAGE_YANDEX}:sha-${GITHUB_SHA::8}"
-            TAGS_WASM_YANDEX="$TAGS_WASM_YANDEX,${DOCKER_IMAGE_WASM_YANDEX}:sha-${GITHUB_SHA::8}"
           fi
           TAGS_FINAL="$TAGS,$TAGS_YANDEX"
           TAGS_WASM_FINAL="$TAGS_WASM,$TAGS_WASM_YANDEX"
-          echo ::set-output name=version::${VERSION}
-          echo ::set-output name=tags::${TAGS_FINAL}
-          echo ::set-output name=tags-wasm::${TAGS_WASM_FINAL}
-          echo ::set-output name=created::$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tags=${TAGS_FINAL}" >> "$GITHUB_OUTPUT"
+          echo "tags-wasm=${TAGS_WASM_FINAL}" >> "$GITHUB_OUTPUT"
+          echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_OUTPUT"
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+      - name: Build common for verification
+        uses: docker/build-push-action@v6
         with:
-          driver-opts: image=moby/buildkit:master
+          context: .
+          target: common
+          tags: actions-container:check
+          load: true
+          push: false
+          pull: ${{ github.event_name == 'schedule' }}
+          no-cache: ${{ github.event_name == 'schedule' }}
+          labels: |
+            org.opencontainers.image.title=${{ github.event.repository.name }}
+            org.opencontainers.image.description=${{ github.event.repository.description }}
+            org.opencontainers.image.url=${{ github.event.repository.html_url }}
+            org.opencontainers.image.source=${{ github.event.repository.clone_url }}
+            org.opencontainers.image.version=${{ steps.prep.outputs.version }}
+            org.opencontainers.image.created=${{ steps.prep.outputs.created }}
+            org.opencontainers.image.revision=${{ steps.checkout.outputs.commit }}
+            org.opencontainers.image.licenses=${{ github.event.repository.license.spdx_id }}
+      - name: Verify common
+        run: docker run --rm -v "$PWD/scripts:/checks:ro" actions-container:check bash /checks/verify-common.sh
+      - name: Build wasm for verification
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: wasm
+          tags: actions-container-wasm:check
+          load: true
+          push: false
+          pull: ${{ github.event_name == 'schedule' }}
+          no-cache-filters: ${{ github.event_name == 'schedule' && 'wasm' || '' }}
+          labels: |
+            org.opencontainers.image.title=${{ github.event.repository.name }}
+            org.opencontainers.image.description=${{ github.event.repository.description }}
+            org.opencontainers.image.url=${{ github.event.repository.html_url }}
+            org.opencontainers.image.source=${{ github.event.repository.clone_url }}
+            org.opencontainers.image.version=${{ steps.prep.outputs.version }}
+            org.opencontainers.image.created=${{ steps.prep.outputs.created }}
+            org.opencontainers.image.revision=${{ steps.checkout.outputs.commit }}
+            org.opencontainers.image.licenses=${{ github.event.repository.license.spdx_id }}
+      - name: Verify wasm
+        run: docker run --rm -v "$PWD/scripts:/checks:ro" actions-container-wasm:check bash /checks/verify-wasm.sh
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -57,39 +106,23 @@ jobs:
           registry: ${{ secrets.YANDEX_DOCKER_REGISTRY_URL }}
           username: ${{ secrets.YANDEX_DOCKER_REGISTRY_LOGIN }}
           password: ${{ secrets.YANDEX_DOCKER_REGISTRY_TOKEN }}
-      - name: Build and push common
-        id: docker_build
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          tags: ${{ steps.prep.outputs.tags }}
-          push: true
-          target: common
-          labels: |
-            org.opencontainers.image.title=${{ github.event.repository.name }}
-            org.opencontainers.image.description=${{ github.event.repository.description }}
-            org.opencontainers.image.url=${{ github.event.repository.html_url }}
-            org.opencontainers.image.source=${{ github.event.repository.clone_url }}
-            org.opencontainers.image.version=${{ steps.prep.outputs.version }}
-            org.opencontainers.image.created=${{ steps.prep.outputs.created }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.licenses=${{ github.event.repository.license.spdx_id }}
-      - name: Build and push wasm
-        id: docker_build_wasm
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          tags: ${{ steps.prep.outputs.tags-wasm }}
-          push: true
-          target: wasm
-          labels: |
-            org.opencontainers.image.title=${{ github.event.repository.name }}
-            org.opencontainers.image.description=${{ github.event.repository.description }}
-            org.opencontainers.image.url=${{ github.event.repository.html_url }}
-            org.opencontainers.image.source=${{ github.event.repository.clone_url }}
-            org.opencontainers.image.version=${{ steps.prep.outputs.version }}
-            org.opencontainers.image.created=${{ steps.prep.outputs.created }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.licenses=${{ github.event.repository.license.spdx_id }}
+      - name: Push verified common
+        env:
+          TAGS: ${{ steps.prep.outputs.tags }}
+        run: |
+          test -n "$TAGS"
+          IFS=',' read -ra tags <<< "$TAGS"
+          for tag in "${tags[@]}"; do
+            docker tag actions-container:check "$tag"
+            docker push "$tag"
+          done
+      - name: Push verified wasm
+        env:
+          TAGS: ${{ steps.prep.outputs.tags-wasm }}
+        run: |
+          test -n "$TAGS"
+          IFS=',' read -ra tags <<< "$TAGS"
+          for tag in "${tags[@]}"; do
+            docker tag actions-container-wasm:check "$tag"
+            docker push "$tag"
+          done

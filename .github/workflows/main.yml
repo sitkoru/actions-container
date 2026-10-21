@@ -11,6 +11,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      - name: Verify release tags
+        run: ruby scripts/verify-release-tags.rb
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build common
@@ -25,10 +27,25 @@ jobs:
           push: false
       - name: Verify common
         run: docker run --rm -v "$PWD/scripts:/checks:ro" actions-container:check bash /checks/verify-common.sh
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - name: Build wasm
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: wasm
+          tags: actions-container-wasm:check
+          load: true
+          push: false
+      - name: Verify wasm
+        run: docker run --rm -v "$PWD/scripts:/checks:ro" actions-container-wasm:check bash /checks/verify-wasm.sh
   release:
     name: Release
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [build, wasm]
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
     steps:
       - name: Checkout
