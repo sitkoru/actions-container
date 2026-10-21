@@ -1,9 +1,11 @@
 name: Release
 
 on:
-  release:
-    types:
-      - released
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
   schedule:
     - cron: '0 3 * * 1'
 
@@ -14,29 +16,39 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
         id: checkout
         with:
-          ref: ${{ github.event.release.tag_name || 'master' }}
+          ref: ${{ github.event_name == 'schedule' && 'master' || github.sha }}
+          fetch-depth: 0
       - name: Prepare
         id: prep
         env:
+          RELEASE_VERSION: ${{ inputs.version }}
           PRIVATE_REGISTRY: ${{ secrets.YANDEX_DOCKER_REGISTRY_URL }}
         run: |
           DOCKER_IMAGE=ghcr.io/sitkoru/actions-container
           DOCKER_IMAGE_WASM=ghcr.io/sitkoru/actions-container-wasm
           DOCKER_IMAGE_YANDEX=${PRIVATE_REGISTRY}/0xdev/actions-container
           DOCKER_IMAGE_WASM_YANDEX=${PRIVATE_REGISTRY}/0xdev/actions-container-wasm
-          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION="v${RELEASE_VERSION}"
           if [ "$GITHUB_EVENT_NAME" = "schedule" ]; then
             VERSION=latest
+          else
+            [[ $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            git fetch --tags origin
+            if git show-ref --verify --quiet "refs/tags/$VERSION"; then
+              test "$(git rev-parse "$VERSION^{commit}")" = "$(git rev-parse HEAD)"
+            fi
           fi
           TAGS="${DOCKER_IMAGE}:${VERSION}"
           TAGS_WASM="${DOCKER_IMAGE_WASM}:${VERSION}"
           TAGS_YANDEX="${DOCKER_IMAGE_YANDEX}:${VERSION}"
           TAGS_WASM_YANDEX="${DOCKER_IMAGE_WASM_YANDEX}:${VERSION}"
-          if [[ $VERSION =~ ^v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+          if [[ $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             MINOR=${VERSION%.*}
             MAJOR=${MINOR%.*}
             TAGS="$TAGS,${DOCKER_IMAGE}:${MINOR},${DOCKER_IMAGE}:${MAJOR},${DOCKER_IMAGE}:latest"
@@ -126,3 +138,12 @@ jobs:
             docker tag actions-container-wasm:check "$tag"
             docker push "$tag"
           done
+      - name: Tag published version
+        if: ${{ github.event_name != 'schedule' }}
+        env:
+          VERSION: ${{ steps.prep.outputs.version }}
+        run: |
+          if ! git show-ref --verify --quiet "refs/tags/$VERSION"; then
+            git tag "$VERSION" HEAD
+            git push origin "refs/tags/$VERSION"
+          fi
