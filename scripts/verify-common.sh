@@ -6,6 +6,9 @@ docker buildx version
 helm version --short
 kubectl version --client=true
 nbgv --version
+node --version
+npm --version
+[[ $(node -p "process.versions.node.split('.')[0]") == 26 ]]
 rsync --version
 ssh -V
 
