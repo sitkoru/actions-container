@@ -2,7 +2,7 @@
 
 Образы для GitHub Actions и собственных исполнителей:
 
-- `actions-container` (`--target common`) — официальный .NET SDK 10 на Ubuntu 24.04, SDK 8, NBGV, Docker CLI/buildx, Helm и kubectl.
+- `actions-container` (`--target common`) — официальный .NET SDK 10 на Ubuntu 24.04, SDK 8, NBGV, Docker CLI/buildx, Helm, kubectl, Node.js и npm.
 - `actions-container-wasm` (`--target wasm`) — общий образ с Python и отдельной установкой `wasm-tools` для SDK 8 и SDK 10.
 
 В обычном образе нет Chrome, его дополнительных библиотек и `trx2junit`.
@@ -19,6 +19,7 @@
 | `NBGV_VERSION` | `3.10.94` |
 | `DOCKER_VERSION` | `29.5.0` |
 | `BUILDX_VERSION` | `0.34.0` |
+| `NODE_VERSION` | `26.13.0` |
 | `HELM_VERSION` | `3.21.0` |
 | `KUBECTL_VERSION` | `1.37.1` |
 
@@ -34,7 +35,7 @@ docker buildx build --platform linux/amd64 --target common --load -t actions-con
 docker run --rm --platform linux/amd64 -v "$PWD/scripts:/checks:ro" actions-container:check bash /checks/verify-common.sh
 ```
 
-`verify-common.sh` выполняет команды инструментов, проверяет наличие SDK 8/10
+`verify-common.sh` выполняет команды инструментов, проверяет основную версию Node.js, наличие SDK 8/10
 и выбор SDK 10 по умолчанию. Доступ к реестрам, кластеру и собственному
 исполнителю не проверяется.
 
